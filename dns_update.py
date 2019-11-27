@@ -5,6 +5,7 @@ import argparse
 class AWSDynDns(object):
     def __init__(self, domain, record, hosted_zone_id, profile_name, ttl):
         self.ip_service = "http://httpbin.org/ip"
+        self.ipv6_service = "https://api6.ipify.org?format=json"
         session = boto3.Session(profile_name=profile_name)
         self.client = session.client('route53')
         self.domain = domain
@@ -27,6 +28,14 @@ class AWSDynDns(object):
         except Exception:
             raise Exception("error getting external IP")
 
+    def get_external_ipv6(self):
+        try:
+            self.external_ipv6_request = requests.get(self.ipv6_service)
+            self.external_ipv6 = self.external_ipv6_request.json()['ip']
+            print("Found external IPv6 IP: {0}".format(self.external_ipv6))
+        except:
+            raise Exception("error getting external IP")
+
     def get_hosted_zone_id(self):
         try:
             self.hosted_zone_list = self.client.list_hosted_zones_by_name()['HostedZones']
@@ -39,12 +48,19 @@ class AWSDynDns(object):
     def check_existing_record(self):
         """ Get current external IP address """
         self.get_external_ip()
+        self.get_external_ipv6()
 
         """ Check for existing record and if it needs to be modified """
         response = self.client.list_resource_record_sets(
             HostedZoneId=self.hosted_zone_id,
             StartRecordName=self.fqdn,
             StartRecordType='A',
+        )
+
+        responsev6 = self.client.list_resource_record_sets(
+            HostedZoneId=self.hosted_zone_id,
+            StartRecordName=self.fqdn,
+            StartRecordType='AAAA',
         )
 
         found_flag = False
@@ -84,6 +100,19 @@ class AWSDynDns(object):
                                 'ResourceRecords': [
                                     {
                                         'Value': self.external_ip
+                                    },
+                                ],
+                            }
+                        },
+                                                {
+                            'Action': 'UPSERT',
+                            'ResourceRecordSet': {
+                                'Name': self.fqdn,
+                                'Type': 'AAAA',
+                                'TTL': self.ttl,
+                                'ResourceRecords': [
+                                    {
+                                        'Value': self.external_ipv6
                                     },
                                 ],
                             }
